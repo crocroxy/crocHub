@@ -24,82 +24,28 @@ local Noclip = false
 local Highlights = {}
 local Connections = {}
 local LastError = 0 -- Used for error rate limiting
+local NameButtons = {} -- Store references to name buttons
 
--- GUI Creation
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "HighlightGUI"
-ScreenGui.Parent = Player:WaitForChild("PlayerGui")
+-- Load Atlas Library
+local Atlas = loadstring(game:HttpGet("https://siegehub.net/Atlas.lua"))()
 
-local MainFrame = Instance.new("Frame")
-MainFrame.Name = "MainFrame"
-MainFrame.Size = UDim2.new(0, 300, 0, 400)
-MainFrame.Position = UDim2.new(0.5, -150, 0.5, -200)
-MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
-MainFrame.BorderSizePixel = 0
-MainFrame.Parent = ScreenGui
+-- Create UI
+local UI = Atlas.new({
+    Name = "CroxyHub";
+    ConfigFolder = "croxyhub";
+    Credit = "made by claude and croxy";
+    Color = Color3.fromRGB(255, 0, 0);
+    Bind = "LeftControl";
+    UseLoader = false
+})
 
-local Title = Instance.new("TextLabel")
-Title.Name = "Title"
-Title.Size = UDim2.new(1, 0, 0, 30)
-Title.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
-Title.TextColor3 = Color3.fromRGB(255, 255, 255)
-Title.Text = "Highlight Manager"
-Title.Font = Enum.Font.GothamBold
-Title.TextSize = 16
-Title.Parent = MainFrame
+-- Create Main Page
+local MainPage = UI:CreatePage("Main")
+local MainSection = MainPage:CreateSection("Highlight Manager")
 
-local ScrollFrame = Instance.new("ScrollingFrame")
-ScrollFrame.Name = "ScrollFrame"
-ScrollFrame.Size = UDim2.new(1, -20, 1, -80)
-ScrollFrame.Position = UDim2.new(0, 10, 0, 40)
-ScrollFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
-ScrollFrame.BorderSizePixel = 0
-ScrollFrame.ScrollBarThickness = 6
-ScrollFrame.Parent = MainFrame
-
-local AddBox = Instance.new("TextBox")
-AddBox.Name = "AddBox"
-AddBox.Size = UDim2.new(0.7, 0, 0, 30)
-AddBox.Position = UDim2.new(0, 10, 1, -35)
-AddBox.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
-AddBox.TextColor3 = Color3.fromRGB(255, 255, 255)
-AddBox.PlaceholderText = "Enter name to highlight..."
-AddBox.Font = Enum.Font.Gotham
-AddBox.TextSize = 14
-AddBox.Parent = MainFrame
-
-local AddButton = Instance.new("TextButton")
-AddButton.Name = "AddButton"
-AddButton.Size = UDim2.new(0.25, 0, 0, 30)
-AddButton.Position = UDim2.new(0.75, 0, 1, -35)
-AddButton.BackgroundColor3 = Color3.fromRGB(40, 100, 40)
-AddButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-AddButton.Text = "Add"
-AddButton.Font = Enum.Font.GothamBold
-AddButton.TextSize = 14
-AddButton.Parent = MainFrame
-
--- Error handling and logging
-local function LogError(source, err)
-    if not Config.Debug then return end
-    
-    -- Rate limit error messages (max 1 per second)
-    local currentTime = tick()
-    if currentTime - LastError < 1 then return end
-    LastError = currentTime
-    
-    local errorMsg = string.format("[ERROR] [%s] %s", source, tostring(err))
-    warn(errorMsg)
-    
-    -- Also show in-game notification for critical errors
-    pcall(function()
-        StarterGui:SetCore("SendNotification", {
-            Title = "Script Error",
-            Text = string.sub(tostring(err), 1, 40) .. "...",
-            Duration = 3
-        })
-    end)
-end
+-- Create Settings Page
+local SettingsPage = UI:CreatePage("Settings")
+local SettingsSection = SettingsPage:CreateSection("Settings")
 
 -- Improved noclip functionality
 local NoclipManager = {
@@ -203,64 +149,94 @@ local NoclipManager = {
     end
 }
 
--- Functions
-local function UpdateList()
-    for _, child in pairs(ScrollFrame:GetChildren()) do
-        child:Destroy()
-    end
-    
-    local YPos = 5
-    for _, name in pairs(Config.Names) do
-        local ItemFrame = Instance.new("Frame")
-        ItemFrame.Size = UDim2.new(1, -10, 0, 30)
-        ItemFrame.Position = UDim2.new(0, 5, 0, YPos)
-        ItemFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
-        ItemFrame.Parent = ScrollFrame
-        
-        local NameLabel = Instance.new("TextLabel")
-        NameLabel.Size = UDim2.new(0.7, 0, 1, 0)
-        NameLabel.BackgroundTransparency = 1
-        NameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-        NameLabel.Text = name
-        NameLabel.Font = Enum.Font.Gotham
-        NameLabel.TextSize = 14
-        NameLabel.Parent = ItemFrame
-        
-        local RemoveButton = Instance.new("TextButton")
-        RemoveButton.Size = UDim2.new(0.25, 0, 1, -6)
-        RemoveButton.Position = UDim2.new(0.73, 0, 0, 3)
-        RemoveButton.BackgroundColor3 = Color3.fromRGB(100, 40, 40)
-        RemoveButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-        RemoveButton.Text = "Remove"
-        RemoveButton.Font = Enum.Font.GothamBold
-        RemoveButton.TextSize = 12
-        RemoveButton.Parent = ItemFrame
-        
-        RemoveButton.MouseButton1Click:Connect(function()
-            table.remove(Config.Names, table.find(Config.Names, name))
-            UpdateList()
+-- Add name textbox
+MainSection:CreateTextbox({
+    Name = "Add Name to Highlight";
+    Flag = "NameInput";
+    Default = "";
+    Placeholder = "Enter name to highlight...";
+    Callback = function(text)
+        if text ~= "" and not table.find(Config.Names, text) then
+            table.insert(Config.Names, text)
             UpdateHighlights()
+            UpdateNameList()
+            UI:Notify({
+                Title = "Name Added";
+                Content = "Added " .. text .. " to highlight list";
+            })
+        end
+    end
+})
+
+-- Add Noclip Toggle
+MainSection:CreateToggle({
+    Name = "Noclip";
+    Flag = "NoclipToggle";
+    Default = false;
+    Callback = function(state)
+        local isEnabled = NoclipManager:toggle()
+        UI:Notify({
+            Title = "Noclip";
+            Content = isEnabled and "Enabled" or "Disabled";
+        })
+    end
+})
+
+-- Add name list with removal buttons
+local function UpdateNameList()
+    -- Remove old buttons
+    for _, button in pairs(NameButtons) do
+        pcall(function()
+            button:Remove()
         end)
-        
-        YPos = YPos + 35
+    end
+    NameButtons = {}
+    
+    -- Add new buttons for each name
+    for _, name in pairs(Config.Names) do
+        local button = MainSection:CreateButton({
+            Name = "Remove: " .. name;
+            Callback = function()
+                local index = table.find(Config.Names, name)
+                if index then
+                    table.remove(Config.Names, index)
+                    UpdateHighlights()
+                    UpdateNameList()
+                    UI:Notify({
+                        Title = "Name Removed";
+                        Content = "Removed " .. name .. " from highlight list";
+                    })
+                end
+            end
+        })
+        table.insert(NameButtons, button)
     end
 end
 
+-- Functions
 local function AddHighlight(object)
     if not Highlights[object] then
-        local highlight = Instance.new("Highlight")
-        highlight.FillColor = Config.HighlightColor
-        highlight.FillTransparency = Config.HighlightTransparency
-        highlight.OutlineColor = Config.HighlightColor
-        highlight.Parent = object
-        Highlights[object] = highlight
+        local success, err = pcall(function()
+            local highlight = Instance.new("Highlight")
+            highlight.FillColor = Config.HighlightColor
+            highlight.FillTransparency = Config.HighlightTransparency
+            highlight.OutlineColor = Config.HighlightColor
+            highlight.Parent = object
+            Highlights[object] = highlight
+        end)
+        
+        if not success then
+            LogError("AddHighlight", err)
+        end
     end
 end
 
 local function UpdateHighlights()
     -- Clear existing highlights
     for object, highlight in pairs(Highlights) do
-        highlight:Destroy()
+        pcall(function()
+            highlight:Destroy()
+        end)
     end
     Highlights = {}
     
@@ -280,19 +256,73 @@ local function UpdateHighlights()
         end
     end
     
-    ScanFolder(workspace)
+    pcall(function()
+        ScanFolder(workspace)
+    end)
 end
 
--- GUI Events
-AddButton.MouseButton1Click:Connect(function()
-    local name = AddBox.Text
-    if name ~= "" and not table.find(Config.Names, name) then
-        table.insert(Config.Names, name)
-        AddBox.Text = ""
-        UpdateList()
-        UpdateHighlights()
+-- Watch for new objects
+Connections.objectAdded = workspace.DescendantAdded:Connect(function(object)
+    if table.find(Config.Names, object.Name) then
+        AddHighlight(object)
     end
 end)
+
+Connections.objectRemoving = workspace.DescendantRemoving:Connect(function(object)
+    if Highlights[object] then
+        pcall(function()
+            Highlights[object]:Destroy()
+        end)
+        Highlights[object] = nil
+    end
+end)
+
+-- Add unload command
+Connections.chatCommand = Players.LocalPlayer.Chatted:Connect(function(message)
+    if message:lower() == "/unload" then
+        pcall(function()
+            NoclipManager:cleanup()
+            
+            for _, connection in pairs(Connections) do
+                if connection.Disconnect then
+                    connection:Disconnect()
+                end
+            end
+            
+            for _, highlight in pairs(Highlights) do
+                highlight:Destroy()
+            end
+            
+            UI:Destroy()
+        end)
+    end
+end)
+
+-- Initialize
+UpdateNameList()
+UpdateHighlights()
+
+-- Error handling and logging
+local function LogError(source, err)
+    if not Config.Debug then return end
+    
+    -- Rate limit error messages (max 1 per second)
+    local currentTime = tick()
+    if currentTime - LastError < 1 then return end
+    LastError = currentTime
+    
+    local errorMsg = string.format("[ERROR] [%s] %s", source, tostring(err))
+    warn(errorMsg)
+    
+    -- Also show in-game notification for critical errors
+    pcall(function()
+        StarterGui:SetCore("SendNotification", {
+            Title = "Script Error",
+            Text = string.sub(tostring(err), 1, 40) .. "...",
+            Duration = 3
+        })
+    end)
+end
 
 -- Function to make frame draggable
 local function MakeDraggable(frame)
@@ -657,7 +687,7 @@ local function InitializeScript()
             CreateMobileButton()
         end
         
-        UpdateList()
+        UpdateNameList()
         UpdateHighlights()
 
         -- Set up noclip based on device type
