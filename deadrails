@@ -8,19 +8,22 @@ local Config = {
     ButtonPositions = {
         Noclip = UDim2.new(0.85, 0, 0.7, 0),
         GuiToggle = UDim2.new(0.85, 0, 0.8, 0)
-    }
+    },
+    Debug = true -- Enable debug logging
 }
 
 -- Services
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local StarterGui = game:GetService("StarterGui")
+local RunService = game:GetService("RunService")
 
 -- Variables
 local Player = Players.LocalPlayer
 local Noclip = false
 local Highlights = {}
-local Connections = {} -- Store all connections for cleanup
+local Connections = {}
+local LastError = 0 -- Used for error rate limiting
 
 -- GUI Creation
 local ScreenGui = Instance.new("ScreenGui")
@@ -75,6 +78,130 @@ AddButton.Text = "Add"
 AddButton.Font = Enum.Font.GothamBold
 AddButton.TextSize = 14
 AddButton.Parent = MainFrame
+
+-- Error handling and logging
+local function LogError(source, err)
+    if not Config.Debug then return end
+    
+    -- Rate limit error messages (max 1 per second)
+    local currentTime = tick()
+    if currentTime - LastError < 1 then return end
+    LastError = currentTime
+    
+    local errorMsg = string.format("[ERROR] [%s] %s", source, tostring(err))
+    warn(errorMsg)
+    
+    -- Also show in-game notification for critical errors
+    pcall(function()
+        StarterGui:SetCore("SendNotification", {
+            Title = "Script Error",
+            Text = string.sub(tostring(err), 1, 40) .. "...",
+            Duration = 3
+        })
+    end)
+end
+
+-- Improved noclip functionality
+local NoclipManager = {
+    enabled = false,
+    connection = nil,
+    originalStates = {},
+    
+    saveState = function(self, part)
+        if not self.originalStates[part] then
+            self.originalStates[part] = {
+                CanCollide = part.CanCollide,
+                Transparency = part.Transparency
+            }
+        end
+    end,
+    
+    restoreState = function(self, part)
+        if self.originalStates[part] then
+            pcall(function()
+                part.CanCollide = self.originalStates[part].CanCollide
+                part.Transparency = self.originalStates[part].Transparency
+            end)
+            self.originalStates[part] = nil
+        end
+    end,
+    
+    enable = function(self)
+        if self.enabled then return end
+        self.enabled = true
+        
+        -- Clear previous states
+        self.originalStates = {}
+        
+        -- Setup new noclip connection
+        if self.connection then self.connection:Disconnect() end
+        
+        self.connection = RunService.Stepped:Connect(function()
+            local character = Player.Character
+            if not character then return end
+            
+            local humanoid = character:FindFirstChild("Humanoid")
+            if not humanoid then return end
+            
+            pcall(function()
+                for _, part in ipairs(character:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        self:saveState(part)
+                        part.CanCollide = false
+                        -- Make character slightly transparent when noclipping
+                        if part.Name ~= "HumanoidRootPart" then
+                            part.Transparency = math.min(0.5, part.Transparency + 0.5)
+                        end
+                    end
+                end
+            end)
+        end)
+    end,
+    
+    disable = function(self)
+        if not self.enabled then return end
+        self.enabled = false
+        
+        -- Disconnect noclip loop
+        if self.connection then
+            self.connection:Disconnect()
+            self.connection = nil
+        end
+        
+        -- Restore all parts to their original state
+        pcall(function()
+            local character = Player.Character
+            if character then
+                for _, part in ipairs(character:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        self:restoreState(part)
+                    end
+                end
+            end
+        end)
+        
+        -- Clear stored states
+        self.originalStates = {}
+    end,
+    
+    toggle = function(self)
+        if self.enabled then
+            self:disable()
+        else
+            self:enable()
+        end
+        return self.enabled
+    end,
+    
+    cleanup = function(self)
+        self:disable()
+        self.originalStates = {}
+        if self.connection then
+            self.connection:Disconnect()
+            self.connection = nil
+        end
+    end
+}
 
 -- Functions
 local function UpdateList()
@@ -289,53 +416,60 @@ end
 
 -- Function to create mobile buttons
 local function CreateMobileButton()
-    -- Create Noclip Button
-    local NoclipButton = Instance.new("TextButton")
-    NoclipButton.Name = "NoclipButton"
-    NoclipButton.Size = UDim2.new(0, 70, 0, 70)
-    NoclipButton.Position = Config.ButtonPositions.Noclip
-    NoclipButton.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
-    NoclipButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-    NoclipButton.Text = "Noclip"
-    NoclipButton.Font = Enum.Font.GothamBold
-    NoclipButton.TextSize = 14
-    NoclipButton.BackgroundTransparency = 0.3
-    NoclipButton.Parent = ScreenGui
+    local success, err = pcall(function()
+        -- Create Noclip Button
+        local NoclipButton = Instance.new("TextButton")
+        NoclipButton.Name = "NoclipButton"
+        NoclipButton.Size = UDim2.new(0, 70, 0, 70)
+        NoclipButton.Position = Config.ButtonPositions.Noclip
+        NoclipButton.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+        NoclipButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+        NoclipButton.Text = "Noclip"
+        NoclipButton.Font = Enum.Font.GothamBold
+        NoclipButton.TextSize = 14
+        NoclipButton.BackgroundTransparency = 0.3
+        NoclipButton.Parent = ScreenGui
 
-    -- Create GUI Toggle Button
-    local GuiToggleButton = Instance.new("TextButton")
-    GuiToggleButton.Name = "GuiToggleButton"
-    GuiToggleButton.Size = UDim2.new(0, 70, 0, 70)
-    GuiToggleButton.Position = Config.ButtonPositions.GuiToggle
-    GuiToggleButton.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
-    GuiToggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-    GuiToggleButton.Text = "GUI"
-    GuiToggleButton.Font = Enum.Font.GothamBold
-    GuiToggleButton.TextSize = 14
-    GuiToggleButton.BackgroundTransparency = 0.3
-    GuiToggleButton.Parent = ScreenGui
+        -- Create GUI Toggle Button
+        local GuiToggleButton = Instance.new("TextButton")
+        GuiToggleButton.Name = "GuiToggleButton"
+        GuiToggleButton.Size = UDim2.new(0, 70, 0, 70)
+        GuiToggleButton.Position = Config.ButtonPositions.GuiToggle
+        GuiToggleButton.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+        GuiToggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+        GuiToggleButton.Text = "GUI"
+        GuiToggleButton.Font = Enum.Font.GothamBold
+        GuiToggleButton.TextSize = 14
+        GuiToggleButton.BackgroundTransparency = 0.3
+        GuiToggleButton.Parent = ScreenGui
 
-    -- Make buttons circular
-    for _, button in pairs({NoclipButton, GuiToggleButton}) do
-        local UICorner = Instance.new("UICorner")
-        UICorner.CornerRadius = UDim.new(1, 0)
-        UICorner.Parent = button
+        -- Make buttons circular
+        for _, button in pairs({NoclipButton, GuiToggleButton}) do
+            local UICorner = Instance.new("UICorner")
+            UICorner.CornerRadius = UDim.new(1, 0)
+            UICorner.Parent = button
+        end
+
+        -- Add click handlers
+        NoclipButton.MouseButton1Click:Connect(function()
+            local isEnabled = NoclipManager:toggle()
+            NoclipButton.BackgroundColor3 = isEnabled and Color3.fromRGB(40, 100, 40) or Color3.fromRGB(40, 40, 50)
+            
+            StarterGui:SetCore("SendNotification", {
+                Title = "Noclip",
+                Text = isEnabled and "Enabled" or "Disabled",
+                Duration = 2
+            })
+        end)
+
+        GuiToggleButton.MouseButton1Click:Connect(function()
+            MainFrame.Visible = not MainFrame.Visible
+        end)
+    end)
+    
+    if not success then
+        LogError("CreateMobileButton", err)
     end
-
-    -- Add click handlers
-    NoclipButton.MouseButton1Click:Connect(function()
-        Noclip = not Noclip
-        NoclipButton.BackgroundColor3 = Noclip and Color3.fromRGB(40, 100, 40) or Color3.fromRGB(40, 40, 50)
-        StarterGui:SetCore("SendNotification", {
-            Title = "Noclip",
-            Text = Noclip and "Enabled" or "Disabled",
-            Duration = 2
-        })
-    end)
-
-    GuiToggleButton.MouseButton1Click:Connect(function()
-        MainFrame.Visible = not MainFrame.Visible
-    end)
 end
 
 -- Function to create device selection prompt
@@ -395,116 +529,241 @@ local function CreateDevicePrompt()
     end)
 end
 
+-- Function to create GUI
+local function CreateGUI()
+    ScreenGui = Instance.new("ScreenGui")
+    ScreenGui.Name = "HighlightGUI"
+    ScreenGui.Parent = Player:WaitForChild("PlayerGui")
+
+    MainFrame = Instance.new("Frame")
+    MainFrame.Name = "MainFrame"
+    MainFrame.Size = UDim2.new(0, 300, 0, 400)
+    MainFrame.Position = UDim2.new(0.5, -150, 0.5, -200)
+    MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+    MainFrame.BorderSizePixel = 0
+    MainFrame.Parent = ScreenGui
+
+    -- Make MainFrame draggable
+    MakeDraggable(MainFrame)
+
+    -- Create tab buttons
+    local TabsFrame = Instance.new("Frame")
+    TabsFrame.Size = UDim2.new(1, 0, 0, 30)
+    TabsFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+    TabsFrame.BorderSizePixel = 0
+    TabsFrame.Parent = MainFrame
+
+    local MainTabButton = Instance.new("TextButton")
+    MainTabButton.Size = UDim2.new(0.5, 0, 1, 0)
+    MainTabButton.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+    MainTabButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    MainTabButton.Text = "Main"
+    MainTabButton.Font = Enum.Font.GothamBold
+    MainTabButton.TextSize = 14
+    MainTabButton.Parent = TabsFrame
+
+    local SettingsTabButton = Instance.new("TextButton")
+    SettingsTabButton.Size = UDim2.new(0.5, 0, 1, 0)
+    SettingsTabButton.Position = UDim2.new(0.5, 0, 0, 0)
+    SettingsTabButton.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+    SettingsTabButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    SettingsTabButton.Text = "Settings"
+    SettingsTabButton.Font = Enum.Font.GothamBold
+    SettingsTabButton.TextSize = 14
+    SettingsTabButton.Parent = TabsFrame
+
+    -- Create close button
+    local CloseButton = Instance.new("TextButton")
+    CloseButton.Size = UDim2.new(0, 30, 0, 30)
+    CloseButton.Position = UDim2.new(1, -30, 0, 0)
+    CloseButton.BackgroundColor3 = Color3.fromRGB(180, 40, 40)
+    CloseButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    CloseButton.Text = "X"
+    CloseButton.Font = Enum.Font.GothamBold
+    CloseButton.TextSize = 14
+    CloseButton.Parent = MainFrame
+    CloseButton.ZIndex = 10
+
+    -- Create main content frame
+    ScrollFrame = Instance.new("ScrollingFrame")
+    ScrollFrame.Name = "ScrollFrame"
+    ScrollFrame.Size = UDim2.new(1, -20, 1, -80)
+    ScrollFrame.Position = UDim2.new(0, 10, 0, 40)
+    ScrollFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+    ScrollFrame.BorderSizePixel = 0
+    ScrollFrame.ScrollBarThickness = 6
+    ScrollFrame.Parent = MainFrame
+
+    AddBox = Instance.new("TextBox")
+    AddBox.Name = "AddBox"
+    AddBox.Size = UDim2.new(0.7, 0, 0, 30)
+    AddBox.Position = UDim2.new(0, 10, 1, -35)
+    AddBox.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+    AddBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+    AddBox.PlaceholderText = "Enter name to highlight..."
+    AddBox.Font = Enum.Font.Gotham
+    AddBox.TextSize = 14
+    AddBox.Parent = MainFrame
+
+    AddButton = Instance.new("TextButton")
+    AddButton.Name = "AddButton"
+    AddButton.Size = UDim2.new(0.25, 0, 0, 30)
+    AddButton.Position = UDim2.new(0.75, 0, 1, -35)
+    AddButton.BackgroundColor3 = Color3.fromRGB(40, 100, 40)
+    AddButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    AddButton.Text = "Add"
+    AddButton.Font = Enum.Font.GothamBold
+    AddButton.TextSize = 14
+    AddButton.Parent = MainFrame
+
+    -- Create settings tab
+    local SettingsFrame = CreateSettingsTab()
+
+    -- Tab switching logic
+    MainTabButton.MouseButton1Click:Connect(function()
+        ScrollFrame.Visible = true
+        AddBox.Visible = true
+        AddButton.Visible = true
+        SettingsFrame.Visible = false
+        MainTabButton.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+        SettingsTabButton.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+    end)
+
+    SettingsTabButton.MouseButton1Click:Connect(function()
+        ScrollFrame.Visible = false
+        AddBox.Visible = false
+        AddButton.Visible = false
+        SettingsFrame.Visible = true
+        MainTabButton.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+        SettingsTabButton.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+    end)
+
+    -- Close button handler
+    CloseButton.MouseButton1Click:Connect(function()
+        MainFrame.Visible = false
+    end)
+
+    -- Initially hide the main frame for mobile users
+    if Config.IsMobile then
+        MainFrame.Visible = false
+    end
+end
+
 -- Function to initialize the script
 local function InitializeScript()
-    CreateGUI()
-    if Config.IsMobile then
-        CreateMobileButton()
-    end
-    
-    UpdateList()
-    UpdateHighlights()
+    local success, err = pcall(function()
+        CreateGUI()
+        if Config.IsMobile then
+            CreateMobileButton()
+        end
+        
+        UpdateList()
+        UpdateHighlights()
 
-    -- Set up noclip based on device type
-    if Config.IsMobile then
-        -- Mobile noclip is handled by the button
-    else
-        -- PC noclip keyboard handler
-        Connections.noclipInput = UserInputService.InputBegan:Connect(function(input, gameProcessed)
-            if not gameProcessed and input.KeyCode == Config.NoclipKey then
-                Noclip = not Noclip
-                StarterGui:SetCore("SendNotification", {
-                    Title = "Noclip",
-                    Text = Noclip and "Enabled" or "Disabled",
-                    Duration = 2
-                })
-            end
-        end)
-    end
+        -- Set up noclip based on device type
+        if not Config.IsMobile then
+            -- PC noclip keyboard handler
+            Connections.noclipInput = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+                if not gameProcessed and input.KeyCode == Config.NoclipKey then
+                    local isEnabled = NoclipManager:toggle()
+                    
+                    StarterGui:SetCore("SendNotification", {
+                        Title = "Noclip",
+                        Text = isEnabled and "Enabled" or "Disabled",
+                        Duration = 2
+                    })
+                end
+            end)
+        end
 
-    -- Set up noclip loop
-    Connections.noclipLoop = game:GetService("RunService").Stepped:Connect(function()
-        if Noclip then
-            local character = Player.Character
-            if character then
-                for _, part in pairs(character:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        part.CanCollide = false
-                    end
+        -- Watch for new objects
+        Connections.objectAdded = workspace.DescendantAdded:Connect(function(object)
+            if table.find(Config.Names, object.Name) then
+                local success, err = pcall(function()
+                    AddHighlight(object)
+                end)
+                if not success then
+                    LogError("AddHighlight", err)
                 end
             end
-        end
-    end)
+        end)
 
-    -- Watch for new objects
-    Connections.objectAdded = workspace.DescendantAdded:Connect(function(object)
-        if table.find(Config.Names, object.Name) then
-            AddHighlight(object)
-        end
-    end)
+        Connections.objectRemoving = workspace.DescendantRemoving:Connect(function(object)
+            if Highlights[object] then
+                local success, err = pcall(function()
+                    Highlights[object]:Destroy()
+                end)
+                if not success then
+                    LogError("RemoveHighlight", err)
+                end
+                Highlights[object] = nil
+            end
+        end)
 
-    Connections.objectRemoving = workspace.DescendantRemoving:Connect(function(object)
-        if Highlights[object] then
-            Highlights[object]:Destroy()
-            Highlights[object] = nil
-        end
+        -- Set up chat command
+        Connections.chatCommand = Players.LocalPlayer.Chatted:Connect(function(message)
+            if message:lower() == "/unload" then
+                UnloadScript()
+            end
+        end)
     end)
-
-    -- Set up chat command
-    Connections.chatCommand = Players.LocalPlayer.Chatted:Connect(function(message)
-        if message:lower() == "/unload" then
-            UnloadScript()
-        end
-    end)
+    
+    if not success then
+        LogError("InitializeScript", err)
+    end
 end
 
 -- Function to unload the script
 local function UnloadScript()
-    -- Disable noclip if it's enabled and restore collision
-    if Noclip then
-        Noclip = false
-        local character = Player.Character
-        if character then
-            for _, part in pairs(character:GetDescendants()) do
-                if part:IsA("BasePart") then
-                    part.CanCollide = true
-                end
-            end
+    local success, err = pcall(function()
+        -- Disable noclip if it's enabled
+        NoclipManager:cleanup()
+        
+        -- Remove all highlights
+        for object, highlight in pairs(Highlights) do
+            pcall(function()
+                highlight:Destroy()
+            end)
         end
+        Highlights = {}
+        
+        -- Clear the names list
+        table.clear(Config.Names)
+        
+        -- Save button positions before cleanup
+        local savedPositions = Config.ButtonPositions
+        
+        -- Remove the GUI
+        if ScreenGui then
+            ScreenGui:Destroy()
+        end
+        
+        -- Restore saved positions
+        Config.ButtonPositions = savedPositions
+        
+        -- Disconnect all connections
+        for _, connection in pairs(Connections) do
+            pcall(function()
+                if connection.Disconnect then
+                    connection:Disconnect()
+                end
+            end)
+        end
+        
+        -- Clear connections table
+        table.clear(Connections)
+        
+        -- Notify user
         StarterGui:SetCore("SendNotification", {
-            Title = "Noclip",
-            Text = "Disabled",
+            Title = "Script",
+            Text = "Successfully unloaded",
             Duration = 2
         })
+    end)
+    
+    if not success then
+        LogError("UnloadScript", err)
     end
-    
-    -- Remove all highlights
-    for object, highlight in pairs(Highlights) do
-        highlight:Destroy()
-    end
-    Highlights = {}
-    
-    -- Clear the names list
-    table.clear(Config.Names)
-    
-    -- Remove the GUI
-    if ScreenGui then
-        ScreenGui:Destroy()
-    end
-    
-    -- Disconnect all connections
-    for _, connection in pairs(Connections) do
-        if connection.Disconnect then
-            connection:Disconnect()
-        end
-    end
-    
-    -- Notify user
-    StarterGui:SetCore("SendNotification", {
-        Title = "Script",
-        Text = "Successfully unloaded",
-        Duration = 2
-    })
 end
 
 -- Start with device prompt
