@@ -52,7 +52,37 @@ end
 -- Load Atlas Library
 local Atlas
 local success, err = pcall(function()
-    Atlas = loadstring(game:HttpGet("https://raw.githubusercontent.com/Atlas-Developers/Atlas-UI-Library/main/Atlas%20UI%20Library/AtlasUI.lua"))()
+    -- Try primary URL first
+    local function tryLoadAtlas()
+        local urls = {
+            "https://siegehub.net/Atlas.lua",
+            "https://raw.githubusercontent.com/Atlas-Developers/Atlas-UI-Library/main/Atlas%20UI%20Library/Atlas.lua"
+        }
+        
+        local loadError
+        for _, url in ipairs(urls) do
+            local success, result = pcall(function()
+                return game:HttpGet(url)
+            end)
+            
+            if success then
+                local loadedAtlas = loadstring(result)()
+                if loadedAtlas then
+                    return loadedAtlas
+                end
+            else
+                loadError = result
+            end
+        end
+        
+        error(loadError or "Failed to load Atlas from all URLs")
+    end
+    
+    Atlas = tryLoadAtlas()
+    
+    if not Atlas then
+        error("Failed to initialize Atlas library")
+    end
 end)
 
 if not success then
@@ -69,13 +99,17 @@ success, err = pcall(function()
         Credit = "made by claude and croxy";
         Color = Color3.fromRGB(255, 0, 0);
         Bind = "LeftControl";
-        UseLoader = true; -- Enable key system
-        FullName = "Croxy Hub V1"; -- Full name shown in loader
-        CheckKey = function(inputtedKey) -- Key check function
+        UseLoader = true;
+        FullName = "Croxy Hub V1";
+        CheckKey = function(inputtedKey)
             return inputtedKey == "test123"
         end;
-        Discord = "https://discord.gg/yourserver" -- Optional: Add your Discord server
+        Discord = "https://discord.gg/yourserver"
     })
+    
+    if not UI then
+        error("Failed to create UI instance")
+    end
 end)
 
 if not success then
