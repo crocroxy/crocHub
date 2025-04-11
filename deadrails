@@ -17,6 +17,7 @@ local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local StarterGui = game:GetService("StarterGui")
 local RunService = game:GetService("RunService")
+local HttpService = game:GetService("HttpService")
 
 -- Variables
 local Player = Players.LocalPlayer
@@ -26,26 +27,75 @@ local Connections = {}
 local LastError = 0 -- Used for error rate limiting
 local NameButtons = {} -- Store references to name buttons
 
+-- Error handling and logging
+local function LogError(source, err)
+    if not Config.Debug then return end
+    
+    -- Rate limit error messages (max 1 per second)
+    local currentTime = tick()
+    if currentTime - LastError < 1 then return end
+    LastError = currentTime
+    
+    local errorMsg = string.format("[ERROR] [%s] %s", source, tostring(err))
+    warn(errorMsg)
+    
+    -- Also show in-game notification for critical errors
+    pcall(function()
+        StarterGui:SetCore("SendNotification", {
+            Title = "Script Error",
+            Text = string.sub(tostring(err), 1, 40) .. "...",
+            Duration = 3
+        })
+    end)
+end
+
 -- Load Atlas Library
-local Atlas = loadstring(game:HttpGet("https://siegehub.net/Atlas.lua"))()
+local Atlas
+local success, err = pcall(function()
+    Atlas = loadstring(game:HttpGet("https://raw.githubusercontent.com/Atlas-Developers/Atlas-UI-Library/main/Atlas%20UI%20Library/AtlasUI.lua"))()
+end)
 
--- Create UI
-local UI = Atlas.new({
-    Name = "CroxyHub";
-    ConfigFolder = "croxyhub";
-    Credit = "made by claude and croxy";
-    Color = Color3.fromRGB(255, 0, 0);
-    Bind = "LeftControl";
-    UseLoader = false
-})
+if not success then
+    LogError("AtlasLoad", "Failed to load Atlas UI Library: " .. tostring(err))
+    return
+end
 
--- Create Main Page
-local MainPage = UI:CreatePage("Main")
-local MainSection = MainPage:CreateSection("Highlight Manager")
+-- Create UI with error handling
+local UI
+success, err = pcall(function()
+    UI = Atlas.new({
+        Name = "CroxyHub";
+        ConfigFolder = "croxyhub";
+        Credit = "made by claude and croxy";
+        Color = Color3.fromRGB(255, 0, 0);
+        Bind = "LeftControl";
+        UseLoader = true; -- Enable key system
+        FullName = "Croxy Hub V1"; -- Full name shown in loader
+        CheckKey = function(inputtedKey) -- Key check function
+            return inputtedKey == "test123"
+        end;
+        Discord = "https://discord.gg/yourserver" -- Optional: Add your Discord server
+    })
+end)
 
--- Create Settings Page
-local SettingsPage = UI:CreatePage("Settings")
-local SettingsSection = SettingsPage:CreateSection("Settings")
+if not success then
+    LogError("UICreation", "Failed to create UI: " .. tostring(err))
+    return
+end
+
+-- Create Pages with error handling
+local MainPage, MainSection, SettingsPage, SettingsSection
+success, err = pcall(function()
+    MainPage = UI:CreatePage("Main")
+    MainSection = MainPage:CreateSection("Highlight Manager")
+    SettingsPage = UI:CreatePage("Settings")
+    SettingsSection = SettingsPage:CreateSection("Settings")
+end)
+
+if not success then
+    LogError("PageCreation", "Failed to create pages: " .. tostring(err))
+    return
+end
 
 -- Improved noclip functionality
 local NoclipManager = {
@@ -301,28 +351,6 @@ end)
 -- Initialize
 UpdateNameList()
 UpdateHighlights()
-
--- Error handling and logging
-local function LogError(source, err)
-    if not Config.Debug then return end
-    
-    -- Rate limit error messages (max 1 per second)
-    local currentTime = tick()
-    if currentTime - LastError < 1 then return end
-    LastError = currentTime
-    
-    local errorMsg = string.format("[ERROR] [%s] %s", source, tostring(err))
-    warn(errorMsg)
-    
-    -- Also show in-game notification for critical errors
-    pcall(function()
-        StarterGui:SetCore("SendNotification", {
-            Title = "Script Error",
-            Text = string.sub(tostring(err), 1, 40) .. "...",
-            Duration = 3
-        })
-    end)
-end
 
 -- Function to make frame draggable
 local function MakeDraggable(frame)
