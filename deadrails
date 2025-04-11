@@ -49,219 +49,67 @@ local function LogError(source, err)
     end)
 end
 
--- Load Atlas Library
-local Atlas
-local success, err = pcall(function()
-    -- Try primary URL first
-    local function tryLoadAtlas()
-        local urls = {
-            "https://siegehub.net/Atlas.lua",
-            "https://raw.githubusercontent.com/Atlas-Developers/Atlas-UI-Library/main/Atlas%20UI%20Library/Atlas.lua"
-        }
-        
-        local loadError
-        for _, url in ipairs(urls) do
-            local success, result = pcall(function()
-                return game:HttpGet(url)
-            end)
-            
-            if success then
-                local loadedAtlas = loadstring(result)()
-                if loadedAtlas then
-                    return loadedAtlas
-                end
-            else
-                loadError = result
-            end
-        end
-        
-        error(loadError or "Failed to load Atlas from all URLs")
-    end
-    
-    Atlas = tryLoadAtlas()
-    
-    if not Atlas then
-        error("Failed to initialize Atlas library")
-    end
-end)
+-- Load Orion Library
+local OrionLib = loadstring(game:HttpGet(('https://raw.githubusercontent.com/shlexware/Orion/main/source')))()
 
-if not success then
-    LogError("AtlasLoad", "Failed to load Atlas UI Library: " .. tostring(err))
-    return
-end
+-- Create Window
+local Window = OrionLib:MakeWindow({
+    Name = "CroxyHub", 
+    HidePremium = true,
+    SaveConfig = true, 
+    ConfigFolder = "croxyhub",
+    IntroEnabled = false
+})
 
--- Create UI with error handling
-local UI
-success, err = pcall(function()
-    UI = Atlas.new({
-        Name = "CroxyHub";
-        ConfigFolder = "croxyhub";
-        Credit = "made by claude and croxy";
-        Color = Color3.fromRGB(255, 0, 0);
-        Bind = "LeftControl";
-        UseLoader = true;
-        FullName = "Croxy Hub V1";
-        CheckKey = function(inputtedKey)
-            return inputtedKey == "test123"
-        end;
-        Discord = "https://discord.gg/yourserver"
-    })
-    
-    if not UI then
-        error("Failed to create UI instance")
-    end
-end)
+-- Create Tabs
+local MainTab = Window:MakeTab({
+    Name = "Main",
+    Icon = "rbxassetid://4483345998",
+    PremiumOnly = false
+})
 
-if not success then
-    LogError("UICreation", "Failed to create UI: " .. tostring(err))
-    return
-end
+local SettingsTab = Window:MakeTab({
+    Name = "Settings",
+    Icon = "rbxassetid://4483345998",
+    PremiumOnly = false
+})
 
--- Create Pages with error handling
-local MainPage, MainSection, SettingsPage, SettingsSection
-success, err = pcall(function()
-    MainPage = UI:CreatePage("Main")
-    MainSection = MainPage:CreateSection("Highlight Manager")
-    SettingsPage = UI:CreatePage("Settings")
-    SettingsSection = SettingsPage:CreateSection("Settings")
-end)
+-- Add name input section
+local NameSection = MainTab:AddSection({
+    Name = "Highlight Manager"
+})
 
-if not success then
-    LogError("PageCreation", "Failed to create pages: " .. tostring(err))
-    return
-end
-
--- Improved noclip functionality
-local NoclipManager = {
-    enabled = false,
-    connection = nil,
-    originalStates = {},
-    
-    saveState = function(self, part)
-        if not self.originalStates[part] then
-            self.originalStates[part] = {
-                CanCollide = part.CanCollide,
-                Transparency = part.Transparency
-            }
-        end
-    end,
-    
-    restoreState = function(self, part)
-        if self.originalStates[part] then
-            pcall(function()
-                part.CanCollide = self.originalStates[part].CanCollide
-                part.Transparency = self.originalStates[part].Transparency
-            end)
-            self.originalStates[part] = nil
-        end
-    end,
-    
-    enable = function(self)
-        if self.enabled then return end
-        self.enabled = true
-        
-        -- Clear previous states
-        self.originalStates = {}
-        
-        -- Setup new noclip connection
-        if self.connection then self.connection:Disconnect() end
-        
-        self.connection = RunService.Stepped:Connect(function()
-            local character = Player.Character
-            if not character then return end
-            
-            local humanoid = character:FindFirstChild("Humanoid")
-            if not humanoid then return end
-            
-            pcall(function()
-                for _, part in ipairs(character:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        self:saveState(part)
-                        part.CanCollide = false
-                        -- Make character slightly transparent when noclipping
-                        if part.Name ~= "HumanoidRootPart" then
-                            part.Transparency = math.min(0.5, part.Transparency + 0.5)
-                        end
-                    end
-                end
-            end)
-        end)
-    end,
-    
-    disable = function(self)
-        if not self.enabled then return end
-        self.enabled = false
-        
-        -- Disconnect noclip loop
-        if self.connection then
-            self.connection:Disconnect()
-            self.connection = nil
-        end
-        
-        -- Restore all parts to their original state
-        pcall(function()
-            local character = Player.Character
-            if character then
-                for _, part in ipairs(character:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        self:restoreState(part)
-                    end
-                end
-            end
-        end)
-        
-        -- Clear stored states
-        self.originalStates = {}
-    end,
-    
-    toggle = function(self)
-        if self.enabled then
-            self:disable()
-        else
-            self:enable()
-        end
-        return self.enabled
-    end,
-    
-    cleanup = function(self)
-        self:disable()
-        self.originalStates = {}
-        if self.connection then
-            self.connection:Disconnect()
-            self.connection = nil
-        end
-    end
-}
-
--- Add name textbox
-MainSection:CreateTextbox({
-    Name = "Add Name to Highlight";
-    Flag = "NameInput";
-    Default = "";
-    Placeholder = "Enter name to highlight...";
+-- Add name input
+MainTab:AddTextbox({
+    Name = "Add Name to Highlight",
+    Default = "",
+    TextDisappear = true,
     Callback = function(text)
         if text ~= "" and not table.find(Config.Names, text) then
             table.insert(Config.Names, text)
             UpdateHighlights()
             UpdateNameList()
-            UI:Notify({
-                Title = "Name Added";
-                Content = "Added " .. text .. " to highlight list";
+            OrionLib:MakeNotification({
+                Name = "Name Added",
+                Content = "Added " .. text .. " to highlight list",
+                Image = "rbxassetid://4483345998",
+                Time = 2
             })
         end
     end
 })
 
 -- Add Noclip Toggle
-MainSection:CreateToggle({
-    Name = "Noclip";
-    Flag = "NoclipToggle";
-    Default = false;
-    Callback = function(state)
+MainTab:AddToggle({
+    Name = "Noclip",
+    Default = false,
+    Callback = function(Value)
         local isEnabled = NoclipManager:toggle()
-        UI:Notify({
-            Title = "Noclip";
-            Content = isEnabled and "Enabled" or "Disabled";
+        OrionLib:MakeNotification({
+            Name = "Noclip",
+            Content = isEnabled and "Enabled" or "Disabled",
+            Image = "rbxassetid://4483345998",
+            Time = 2
         })
     end
 })
@@ -278,22 +126,23 @@ local function UpdateNameList()
     
     -- Add new buttons for each name
     for _, name in pairs(Config.Names) do
-        local button = MainSection:CreateButton({
-            Name = "Remove: " .. name;
+        MainTab:AddButton({
+            Name = "Remove: " .. name,
             Callback = function()
                 local index = table.find(Config.Names, name)
                 if index then
                     table.remove(Config.Names, index)
                     UpdateHighlights()
                     UpdateNameList()
-                    UI:Notify({
-                        Title = "Name Removed";
-                        Content = "Removed " .. name .. " from highlight list";
+                    OrionLib:MakeNotification({
+                        Name = "Name Removed",
+                        Content = "Removed " .. name .. " from highlight list",
+                        Image = "rbxassetid://4483345998",
+                        Time = 2
                     })
                 end
             end
         })
-        table.insert(NameButtons, button)
     end
 end
 
@@ -377,7 +226,7 @@ Connections.chatCommand = Players.LocalPlayer.Chatted:Connect(function(message)
                 highlight:Destroy()
             end
             
-            UI:Destroy()
+            OrionLib:Destroy()
         end)
     end
 end)
@@ -829,6 +678,9 @@ local function UnloadScript()
         if ScreenGui then
             ScreenGui:Destroy()
         end
+        
+        -- Destroy Orion UI
+        OrionLib:Destroy()
         
         -- Restore saved positions
         Config.ButtonPositions = savedPositions
