@@ -13,18 +13,21 @@ local RootPart = Character:WaitForChild("HumanoidRootPart")
 local Settings = {
     NoClipEnabled = false,
     NoClipKeybind = Enum.KeyCode.C,
+    HighlightEnabled = false,
     HighlightColor = Color3.fromRGB(255, 0, 0),
-    HighlightedObjects = {}
+    HighlightedObjects = {},
+    HighlightTransparency = 0.5,
+    NoClipSpeed = 50
 }
 
 -- Create Window
 local Window = Rayfield:CreateWindow({
-    Name = "NoClip & Highlight",
+    Name = "CrocHub",
     LoadingTitle = "Loading...",
-    LoadingSubtitle = "by Your Name",
+    LoadingSubtitle = "Dead Rails",
     ConfigurationSaving = {
         Enabled = true,
-        FolderName = "NoClipHighlight",
+        FolderName = "crochub",
         FileName = "Config"
     }
 })
@@ -32,8 +35,9 @@ local Window = Rayfield:CreateWindow({
 -- Create Tabs
 local MainTab = Window:CreateTab("Main", 4483362458)
 local SettingsTab = Window:CreateTab("Settings", 4483362458)
+local HighlightTab = Window:CreateTab("Highlight", 4483362458)
 
--- NoClip Function
+-- Improved NoClip Function
 local function ToggleNoClip()
     Settings.NoClipEnabled = not Settings.NoClipEnabled
     Rayfield:Notify({
@@ -43,16 +47,19 @@ local function ToggleNoClip()
     })
 end
 
--- Highlight Function
+-- Enhanced Highlight Function
 local function HighlightObject(objectName)
+    if not Settings.HighlightEnabled then return end
+    
     -- Search in workspace and its descendants
     local function searchInFolder(folder)
         for _, object in ipairs(folder:GetChildren()) do
-            if object.Name == objectName then
+            if object.Name:lower():find(objectName:lower()) then
                 if not Settings.HighlightedObjects[object] then
                     local highlight = Instance.new("Highlight")
                     highlight.FillColor = Settings.HighlightColor
                     highlight.OutlineColor = Settings.HighlightColor
+                    highlight.FillTransparency = Settings.HighlightTransparency
                     highlight.Parent = object
                     Settings.HighlightedObjects[object] = highlight
                 end
@@ -66,7 +73,18 @@ local function HighlightObject(objectName)
     searchInFolder(game.Workspace)
 end
 
+-- Clear Highlights Function
+local function ClearHighlights()
+    for object, highlight in pairs(Settings.HighlightedObjects) do
+        if highlight and highlight.Parent then
+            highlight:Destroy()
+        end
+    end
+    Settings.HighlightedObjects = {}
+end
+
 -- Create UI Elements
+-- Main Tab
 MainTab:CreateToggle({
     Name = "NoClip Toggle",
     CurrentValue = false,
@@ -76,14 +94,16 @@ MainTab:CreateToggle({
     end,
 })
 
-MainTab:CreateTextbox({
-    Name = "Highlight Object",
-    PlaceholderText = "Enter object name",
-    RemoveTextAfterFocusLost = false,
-    Callback = function(Text)
-        if Text ~= "" then
-            HighlightObject(Text)
-        end
+-- Settings Tab
+SettingsTab:CreateSlider({
+    Name = "NoClip Speed",
+    Range = {1, 200},
+    Increment = 1,
+    Suffix = "Speed",
+    CurrentValue = 50,
+    Flag = "NoClipSpeed",
+    Callback = function(Value)
+        Settings.NoClipSpeed = Value
     end,
 })
 
@@ -97,13 +117,84 @@ SettingsTab:CreateKeybind({
     end,
 })
 
--- NoClip Connection
+-- Highlight Tab
+HighlightTab:CreateToggle({
+    Name = "Enable Highlight ESP",
+    CurrentValue = false,
+    Flag = "HighlightESP",
+    Callback = function(Value)
+        Settings.HighlightEnabled = Value
+        if not Value then
+            ClearHighlights()
+        end
+    end,
+})
+
+HighlightTab:CreateTextbox({
+    Name = "Highlight Object",
+    PlaceholderText = "Enter object name",
+    RemoveTextAfterFocusLost = false,
+    Callback = function(Text)
+        if Text ~= "" and Settings.HighlightEnabled then
+            HighlightObject(Text)
+        end
+    end,
+})
+
+HighlightTab:CreateColorPicker({
+    Name = "Highlight Color",
+    Color = Settings.HighlightColor,
+    Flag = "HighlightColor",
+    Callback = function(Color)
+        Settings.HighlightColor = Color
+        -- Update existing highlights
+        for _, highlight in pairs(Settings.HighlightedObjects) do
+            if highlight and highlight.Parent then
+                highlight.FillColor = Color
+                highlight.OutlineColor = Color
+            end
+        end
+    end,
+})
+
+HighlightTab:CreateSlider({
+    Name = "Highlight Transparency",
+    Range = {0, 1},
+    Increment = 0.1,
+    Suffix = "Alpha",
+    CurrentValue = 0.5,
+    Flag = "HighlightTransparency",
+    Callback = function(Value)
+        Settings.HighlightTransparency = Value
+        -- Update existing highlights
+        for _, highlight in pairs(Settings.HighlightedObjects) do
+            if highlight and highlight.Parent then
+                highlight.FillTransparency = Value
+            end
+        end
+    end,
+})
+
+HighlightTab:CreateButton({
+    Name = "Clear All Highlights",
+    Callback = function()
+        ClearHighlights()
+    end,
+})
+
+-- Improved NoClip Connection
 RunService.Stepped:Connect(function()
     if Settings.NoClipEnabled and Character and Humanoid then
         for _, part in ipairs(Character:GetDescendants()) do
             if part:IsA("BasePart") then
                 part.CanCollide = false
             end
+        end
+        
+        -- Enhanced movement during noclip
+        local moveDirection = Humanoid.MoveDirection * Settings.NoClipSpeed
+        if moveDirection.Magnitude > 0 then
+            RootPart.CFrame = RootPart.CFrame + moveDirection * RunService.Stepped:Wait()
         end
     end
 end)
