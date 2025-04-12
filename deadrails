@@ -17,7 +17,7 @@ local Settings = {
     HighlightColor = Color3.fromRGB(255, 0, 0),
     HighlightedObjects = {},
     HighlightTransparency = 0.5,
-    NoClipSpeed = 50
+    HighlightList = {} -- New: Store list of items to highlight
 }
 
 -- Create Window
@@ -37,7 +37,7 @@ local MainTab = Window:CreateTab("Main", 4483362458)
 local SettingsTab = Window:CreateTab("Settings", 4483362458)
 local HighlightTab = Window:CreateTab("Highlight", 4483362458)
 
--- Improved NoClip Function
+-- Improved NoClip Function with Better Method
 local function ToggleNoClip()
     Settings.NoClipEnabled = not Settings.NoClipEnabled
     Rayfield:Notify({
@@ -62,6 +62,10 @@ local function HighlightObject(objectName)
                     highlight.FillTransparency = Settings.HighlightTransparency
                     highlight.Parent = object
                     Settings.HighlightedObjects[object] = highlight
+                    -- Add to highlight list if not already present
+                    if not table.find(Settings.HighlightList, objectName) then
+                        table.insert(Settings.HighlightList, objectName)
+                    end
                 end
             end
             if #object:GetChildren() > 0 then
@@ -81,6 +85,7 @@ local function ClearHighlights()
         end
     end
     Settings.HighlightedObjects = {}
+    Settings.HighlightList = {}
 end
 
 -- Create UI Elements
@@ -95,18 +100,6 @@ MainTab:CreateToggle({
 })
 
 -- Settings Tab
-SettingsTab:CreateSlider({
-    Name = "NoClip Speed",
-    Range = {1, 200},
-    Increment = 1,
-    Suffix = "Speed",
-    CurrentValue = 50,
-    Flag = "NoClipSpeed",
-    Callback = function(Value)
-        Settings.NoClipSpeed = Value
-    end,
-})
-
 SettingsTab:CreateKeybind({
     Name = "NoClip Keybind",
     CurrentKeybind = "C",
@@ -131,12 +124,17 @@ HighlightTab:CreateToggle({
 })
 
 HighlightTab:CreateTextbox({
-    Name = "Highlight Object",
-    PlaceholderText = "Enter object name",
+    Name = "Add Item to Highlight List",
+    PlaceholderText = "Enter item name to add",
     RemoveTextAfterFocusLost = false,
     Callback = function(Text)
         if Text ~= "" and Settings.HighlightEnabled then
             HighlightObject(Text)
+            Rayfield:Notify({
+                Title = "Item Added",
+                Content = "Added '" .. Text .. "' to highlight list",
+                Duration = 2
+            })
         end
     end,
 })
@@ -176,25 +174,45 @@ HighlightTab:CreateSlider({
 })
 
 HighlightTab:CreateButton({
-    Name = "Clear All Highlights",
+    Name = "List Highlighted Items",
     Callback = function()
-        ClearHighlights()
+        if #Settings.HighlightList > 0 then
+            local itemList = table.concat(Settings.HighlightList, "\n• ")
+            Rayfield:Notify({
+                Title = "Highlighted Items",
+                Content = "Currently highlighting:\n• " .. itemList,
+                Duration = 5
+            })
+        else
+            Rayfield:Notify({
+                Title = "Highlighted Items",
+                Content = "No items are currently being highlighted",
+                Duration = 3
+            })
+        end
     end,
 })
 
--- Improved NoClip Connection
-RunService.Stepped:Connect(function()
+HighlightTab:CreateButton({
+    Name = "Clear All Highlights",
+    Callback = function()
+        ClearHighlights()
+        Rayfield:Notify({
+            Title = "Highlights Cleared",
+            Content = "All highlights have been removed",
+            Duration = 2
+        })
+    end,
+})
+
+-- Improved NoClip Connection with Better Method
+RunService.Heartbeat:Connect(function()
     if Settings.NoClipEnabled and Character and Humanoid then
         for _, part in ipairs(Character:GetDescendants()) do
             if part:IsA("BasePart") then
                 part.CanCollide = false
+                part.Velocity = Vector3.new(0, 0, 0)
             end
-        end
-        
-        -- Enhanced movement during noclip
-        local moveDirection = Humanoid.MoveDirection * Settings.NoClipSpeed
-        if moveDirection.Magnitude > 0 then
-            RootPart.CFrame = RootPart.CFrame + moveDirection * RunService.Stepped:Wait()
         end
     end
 end)
