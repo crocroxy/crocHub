@@ -17,7 +17,7 @@ local Settings = {
     HighlightColor = Color3.fromRGB(255, 0, 0),
     HighlightedObjects = {},
     HighlightTransparency = 0.5,
-    HighlightList = {} -- New: Store list of items to highlight
+    HighlightItems = {} -- Store items to highlight
 }
 
 -- Create Window
@@ -37,14 +37,19 @@ local MainTab = Window:CreateTab("Main", 4483362458)
 local SettingsTab = Window:CreateTab("Settings", 4483362458)
 local HighlightTab = Window:CreateTab("Highlight", 4483362458)
 
--- Improved NoClip Function with Better Method
-local function ToggleNoClip()
-    Settings.NoClipEnabled = not Settings.NoClipEnabled
-    Rayfield:Notify({
-        Title = "NoClip",
-        Content = Settings.NoClipEnabled and "Enabled" or "Disabled",
-        Duration = 2
-    })
+-- Fixed NoClip Function
+local function EnableNoClip()
+    if Character and Character:FindFirstChild("Humanoid") then
+        local Humanoid = Character:FindFirstChild("Humanoid")
+        Humanoid:ChangeState(11)
+    end
+end
+
+local function DisableNoClip()
+    if Character and Character:FindFirstChild("Humanoid") then
+        local Humanoid = Character:FindFirstChild("Humanoid")
+        Humanoid:ChangeState(5)
+    end
 end
 
 -- Enhanced Highlight Function
@@ -62,10 +67,6 @@ local function HighlightObject(objectName)
                     highlight.FillTransparency = Settings.HighlightTransparency
                     highlight.Parent = object
                     Settings.HighlightedObjects[object] = highlight
-                    -- Add to highlight list if not already present
-                    if not table.find(Settings.HighlightList, objectName) then
-                        table.insert(Settings.HighlightList, objectName)
-                    end
                 end
             end
             if #object:GetChildren() > 0 then
@@ -77,6 +78,16 @@ local function HighlightObject(objectName)
     searchInFolder(game.Workspace)
 end
 
+-- Function to add item to highlight list
+local function AddToHighlightList(itemName)
+    if not table.find(Settings.HighlightItems, itemName) then
+        table.insert(Settings.HighlightItems, itemName)
+        HighlightObject(itemName)
+        return true
+    end
+    return false
+end
+
 -- Clear Highlights Function
 local function ClearHighlights()
     for object, highlight in pairs(Settings.HighlightedObjects) do
@@ -85,7 +96,7 @@ local function ClearHighlights()
         end
     end
     Settings.HighlightedObjects = {}
-    Settings.HighlightList = {}
+    Settings.HighlightItems = {}
 end
 
 -- Create UI Elements
@@ -96,6 +107,11 @@ MainTab:CreateToggle({
     Flag = "NoClipToggle",
     Callback = function(Value)
         Settings.NoClipEnabled = Value
+        if Value then
+            EnableNoClip()
+        else
+            DisableNoClip()
+        end
     end,
 })
 
@@ -117,24 +133,37 @@ HighlightTab:CreateToggle({
     Flag = "HighlightESP",
     Callback = function(Value)
         Settings.HighlightEnabled = Value
-        if not Value then
+        if Value then
+            -- Reapply highlights to existing items in list
+            for _, itemName in ipairs(Settings.HighlightItems) do
+                HighlightObject(itemName)
+            end
+        else
             ClearHighlights()
         end
     end,
 })
 
-HighlightTab:CreateTextbox({
-    Name = "Add Item to Highlight List",
-    PlaceholderText = "Enter item name to add",
-    RemoveTextAfterFocusLost = false,
+-- New textbox for adding items to highlight list
+HighlightTab:CreateInput({
+    Name = "Add Item to Highlight",
+    PlaceholderText = "Enter item name",
+    RemoveTextAfterFocusLost = true,
     Callback = function(Text)
-        if Text ~= "" and Settings.HighlightEnabled then
-            HighlightObject(Text)
-            Rayfield:Notify({
-                Title = "Item Added",
-                Content = "Added '" .. Text .. "' to highlight list",
-                Duration = 2
-            })
+        if Text ~= "" then
+            if AddToHighlightList(Text) then
+                Rayfield:Notify({
+                    Title = "Item Added",
+                    Content = "Added '" .. Text .. "' to highlight list",
+                    Duration = 2
+                })
+            else
+                Rayfield:Notify({
+                    Title = "Already Added",
+                    Content = "'" .. Text .. "' is already in the highlight list",
+                    Duration = 2
+                })
+            end
         end
     end,
 })
@@ -173,11 +202,12 @@ HighlightTab:CreateSlider({
     end,
 })
 
+-- Button to list highlighted items
 HighlightTab:CreateButton({
     Name = "List Highlighted Items",
     Callback = function()
-        if #Settings.HighlightList > 0 then
-            local itemList = table.concat(Settings.HighlightList, "\n• ")
+        if #Settings.HighlightItems > 0 then
+            local itemList = table.concat(Settings.HighlightItems, "\n• ")
             Rayfield:Notify({
                 Title = "Highlighted Items",
                 Content = "Currently highlighting:\n• " .. itemList,
@@ -205,22 +235,22 @@ HighlightTab:CreateButton({
     end,
 })
 
--- Improved NoClip Connection with Better Method
-RunService.Heartbeat:Connect(function()
-    if Settings.NoClipEnabled and Character and Humanoid then
-        for _, part in ipairs(Character:GetDescendants()) do
-            if part:IsA("BasePart") then
-                part.CanCollide = false
-                part.Velocity = Vector3.new(0, 0, 0)
-            end
-        end
+-- NoClip Connection with Fixed Method
+RunService.Stepped:Connect(function()
+    if Settings.NoClipEnabled and Character then
+        EnableNoClip()
     end
 end)
 
 -- Keybind Connection
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if not gameProcessed and input.KeyCode == Settings.NoClipKeybind then
-        ToggleNoClip()
+        Settings.NoClipEnabled = not Settings.NoClipEnabled
+        if Settings.NoClipEnabled then
+            EnableNoClip()
+        else
+            DisableNoClip()
+        end
     end
 end)
 
@@ -229,6 +259,11 @@ LocalPlayer.CharacterAdded:Connect(function(newCharacter)
     Character = newCharacter
     Humanoid = Character:WaitForChild("Humanoid")
     RootPart = Character:WaitForChild("HumanoidRootPart")
+    
+    -- Reapply noclip if it was enabled
+    if Settings.NoClipEnabled then
+        EnableNoClip()
+    end
 end)
 
 -- Clean up highlights when objects are removed
